@@ -7,6 +7,7 @@ import uvicorn
 from models.diagnosis_service import DiagnosisService
 from models.data_processor import DataProcessor
 from schemas.schemas import DiagnosisResponse
+from models.early_fusion_service import EarlyFusionService
 import os
 from dotenv import load_dotenv
 
@@ -30,6 +31,7 @@ app.add_middleware(
 # Servisleri başlat
 diagnosis_service = DiagnosisService()
 data_processor = DataProcessor()
+early_fusion_service = EarlyFusionService()
 
 
 @app.get("/")
@@ -53,26 +55,16 @@ async def get_diagnosis(
     measurements: Optional[str] = Form(None),
     xray: Optional[UploadFile] = File(None)
 ):
-    """
-    AI destekli teşhis endpoint'i
-    
-    Args:
-        diagnosisType: 'measurements', 'xray', veya 'both'
-        measurements: JSON stringified MeasurementData (opsiyonel)
-        xray: Röntgen görüntü dosyası (opsiyonel)
-    
-    Returns:
-        DiagnosisResponse: Teşhis sonuçları
-    """
     try:
-        # Validasyon
-        if diagnosisType not in ['measurements', 'xray', 'both']:
+        # 1. Validasyon listesine 'early_fusion' tipini ekleyin
+        valid_types = ['measurements', 'xray', 'both', 'early_fusion']
+        if diagnosisType not in valid_types:
             raise HTTPException(
                 status_code=400,
-                detail="Geçersiz diagnosisType. 'measurements', 'xray', veya 'both' olmalı."
+                detail=f"Geçersiz diagnosisType. {valid_types} değerlerinden biri olmalı."
             )
         
-        # Ölçüm verilerini parse et
+        # Ölçüm verilerini parse et (mevcut kodunuz)
         measurement_data = None
         if measurements:
             try:
@@ -83,7 +75,7 @@ async def get_diagnosis(
                     detail="Geçersiz JSON formatı - measurements"
                 )
         
-        # Röntgen görüntüsünü işle
+        # Röntgen görüntüsünü işle (mevcut kodunuz)
         xray_image = None
         if xray:
             if not xray.content_type or not xray.content_type.startswith('image/'):
@@ -91,16 +83,25 @@ async def get_diagnosis(
                     status_code=400,
                     detail="Röntgen dosyası bir görüntü dosyası olmalı"
                 )
-            # Dosyayı oku
-            xray_bytes = await xray.read()
-            xray_image = xray_bytes
+            xray_image = await xray.read()
         
-        # Veri işleme ve AI analizi
-        result = await diagnosis_service.get_diagnosis(
-            diagnosis_type=diagnosisType,
-            measurements=measurement_data,
-            xray_image=xray_image
-        )
+        # 2. Veri işleme ve AI analizi kısmını yeni servisi kapsayacak şekilde güncelleyin
+        if diagnosisType == 'early_fusion':
+            # Erken füzyon için her iki veri de zorunludur
+            if not measurement_data or not xray_image:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Erken füzyon (early_fusion) için hem ölçüm verisi (measurements) hem de röntgen (xray) gereklidir."
+                )
+            # Yeni servisi (Yöntem 1) çağırın
+            result = await early_fusion_service.get_diagnosis(measurement_data, xray_image)
+        else:
+            # Mevcut yöntemleri (measurements, xray, both) çağıran kısım
+            result = await diagnosis_service.get_diagnosis(
+                diagnosis_type=diagnosisType,
+                measurements=measurement_data,
+                xray_image=xray_image
+            )
         
         return result
         
